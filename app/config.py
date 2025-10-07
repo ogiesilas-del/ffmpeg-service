@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     """Application configuration settings loaded from environment variables"""
 
     # Supabase
-    supabase_url: str = os.getenv("Database_URL", "").lstrip("=")
-    supabase_key: str = os.getenv("Database_ANON_KEY", "").lstrip("=")
+    supabase_url: str = os.getenv("Database_URL", "").strip().lstrip("=").strip()
+    supabase_key: str = os.getenv("Database_ANON_KEY", "").strip().lstrip("=").strip()
 
     # Redis
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
