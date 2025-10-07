@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     """Application configuration settings loaded from environment variables"""
 
     # Supabase
-    supabase_url: str = os.getenv("VITE_SUPABASE_URL", "")
-    supabase_key: str = os.getenv("VITE_SUPABASE_ANON_KEY", "")
+    supabase_url: str = os.getenv("Database_URL", "")
+    supabase_key: str = os.getenv("Database_ANON_KEY", "")
 
     # Redis
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -38,9 +38,9 @@ class Settings(BaseSettings):
     def validate_config(self) -> None:
         """Validate that all required configuration is present"""
         if not self.supabase_url:
-            raise ValueError("VITE_SUPABASE_URL environment variable is required")
+            raise ValueError("Database_URL environment variable is required")
         if not self.supabase_key:
-            raise ValueError("VITE_SUPABASE_ANON_KEY environment variable is required")
+            raise ValueError("Database_ANON_KEY environment variable is required")
 
         # Create directories if they don't exist
         os.makedirs(self.video_output_dir, exist_ok=True)
