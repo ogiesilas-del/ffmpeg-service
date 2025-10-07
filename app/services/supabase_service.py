@@ -70,15 +70,18 @@ class SupabaseService:
                 "metadata": metadata or {}
             }
 
+            logger.debug(f"Creating task with data: {task_data}")
             result = self.client.table("tasks").insert(task_data).execute()
 
             if result.data and len(result.data) > 0:
                 task_id = UUID(result.data[0]["id"])
                 logger.info(f"Created task {task_id} with type {task_type.value}")
+                logger.debug(f"Full task data: {result.data[0]}")
                 return task_id
+            logger.error(f"Failed to create task - no data returned from insert")
             return None
         except Exception as e:
-            logger.error(f"Failed to create task: {e}")
+            logger.error(f"Failed to create task: {e}", exc_info=True)
             return None
 
     def get_task(self, task_id: UUID) -> Optional[Dict[str, Any]]:
@@ -92,13 +95,18 @@ class SupabaseService:
             Task data dictionary or None if not found
         """
         try:
+            logger.debug(f"Querying task {task_id} from Supabase")
             result = self.client.table("tasks").select("*").eq("id", str(task_id)).maybeSingle().execute()
 
+            logger.debug(f"Query result for task {task_id}: data={result.data}")
+
             if result.data:
+                logger.info(f"Task {task_id} retrieved successfully")
                 return result.data
+            logger.warning(f"Task {task_id} not found in database")
             return None
         except Exception as e:
-            logger.error(f"Failed to get task {task_id}: {e}")
+            logger.error(f"Failed to get task {task_id}: {e}", exc_info=True)
             return None
 
     def update_task_status(
