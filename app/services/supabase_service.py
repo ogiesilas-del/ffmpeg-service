@@ -18,6 +18,9 @@ class SupabaseService:
     def connect(self) -> None:
         """Establish connection to Supabase"""
         try:
+            logger.info(f"Attempting Supabase connection with URL: {settings.supabase_url}")
+            logger.info(f"Supabase key present: {bool(settings.supabase_key)}")
+
             if not settings.supabase_url or not settings.supabase_key:
                 logger.warning("Supabase credentials not configured")
                 return
