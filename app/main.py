@@ -22,19 +22,41 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     logger.info("Starting FastAPI application...")
 
+    redis_connected = False
+    supabase_connected = False
+
     try:
         settings.validate_config()
-        supabase_service.connect()
-        await redis_service.connect()
-        logger.info("All services connected successfully")
+        logger.info("Configuration validated")
+        supabase_connected = True
     except Exception as e:
-        logger.error(f"Failed to initialize services: {e}")
-        raise
+        logger.warning(f"Supabase configuration issue: {e}")
+
+    try:
+        supabase_service.connect()
+        logger.info("Supabase connected successfully")
+    except Exception as e:
+        logger.warning(f"Supabase connection failed: {e}")
+        supabase_connected = False
+
+    try:
+        await redis_service.connect()
+        logger.info("Redis connected successfully")
+        redis_connected = True
+    except Exception as e:
+        logger.warning(f"Redis connection failed: {e}")
+        redis_connected = False
+
+    if redis_connected and supabase_connected:
+        logger.info("All services connected successfully")
+    else:
+        logger.warning(f"Running with limited functionality - Redis: {redis_connected}, Supabase: {supabase_connected}")
 
     yield
 
     logger.info("Shutting down FastAPI application...")
-    await redis_service.disconnect()
+    if redis_connected:
+        await redis_service.disconnect()
 
 
 app = FastAPI(
@@ -232,7 +254,7 @@ async def health_check():
     supabase_status = "connected" if supabase_service.is_healthy() else "disconnected"
     queue_length = await redis_service.get_queue_length()
 
-    overall_status = "healthy" if (redis_status == "connected" and supabase_status == "connected") else "unhealthy"
+    overall_status = "healthy" if (redis_status == "connected" and supabase_status == "connected") else "degraded"
 
     return HealthCheckResponse(
         status=overall_status,
