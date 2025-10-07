@@ -32,8 +32,11 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
 
     try:
         logger.info(f"[{task_id}] Starting caption task")
+        logger.info(f"[{task_id}] Task data: {task_data}")
 
+        logger.info(f"[{task_id}] Updating task status to RUNNING")
         supabase_service.update_task_status(task_id, TaskStatus.RUNNING)
+        logger.info(f"[{task_id}] Status updated to RUNNING")
 
         video_url = task_data["video_url"]
         model_size = "small"
@@ -75,7 +78,7 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
 
     except Exception as e:
         error_msg = f"Caption task failed: {str(e)}"
-        logger.error(f"[{task_id}] {error_msg}")
+        logger.error(f"[{task_id}] {error_msg}", exc_info=True)
         supabase_service.update_task_status(
             task_id,
             TaskStatus.FAILED,
@@ -103,8 +106,11 @@ async def process_merge_task(task_id: UUID, task_data: Dict[str, Any]) -> None:
 
     try:
         logger.info(f"[{task_id}] Starting merge task")
+        logger.info(f"[{task_id}] Task data: {task_data}")
 
+        logger.info(f"[{task_id}] Updating task status to RUNNING")
         supabase_service.update_task_status(task_id, TaskStatus.RUNNING)
+        logger.info(f"[{task_id}] Status updated to RUNNING")
 
         metadata = task_data.get("metadata", {})
         scene_urls = metadata["scene_clip_urls"]
@@ -173,7 +179,7 @@ async def process_merge_task(task_id: UUID, task_data: Dict[str, Any]) -> None:
 
     except Exception as e:
         error_msg = f"Merge task failed: {str(e)}"
-        logger.error(f"[{task_id}] {error_msg}")
+        logger.error(f"[{task_id}] {error_msg}", exc_info=True)
         supabase_service.update_task_status(
             task_id,
             TaskStatus.FAILED,
@@ -203,8 +209,11 @@ async def process_background_music_task(task_id: UUID, task_data: Dict[str, Any]
 
     try:
         logger.info(f"[{task_id}] Starting background music task")
+        logger.info(f"[{task_id}] Task data: {task_data}")
 
+        logger.info(f"[{task_id}] Updating task status to RUNNING")
         supabase_service.update_task_status(task_id, TaskStatus.RUNNING)
+        logger.info(f"[{task_id}] Status updated to RUNNING")
 
         video_url = task_data["video_url"]
         metadata = task_data.get("metadata", {})
@@ -250,7 +259,7 @@ async def process_background_music_task(task_id: UUID, task_data: Dict[str, Any]
 
     except Exception as e:
         error_msg = f"Background music task failed: {str(e)}"
-        logger.error(f"[{task_id}] {error_msg}")
+        logger.error(f"[{task_id}] {error_msg}", exc_info=True)
         supabase_service.update_task_status(
             task_id,
             TaskStatus.FAILED,
