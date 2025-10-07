@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     max_file_size_mb: int = int(os.getenv("MAX_FILE_SIZE_MB", "100"))
     max_concurrent_workers: int = int(os.getenv("MAX_CONCURRENT_WORKERS", "3"))
     task_ttl_hours: int = int(os.getenv("TASK_TTL_HOURS", "2"))
-    video_output_dir: str = os.getenv("VIDEO_OUTPUT_DIR", "./videos")
-    whisper_model_cache_dir: str = os.getenv("WHISPER_MODEL_CACHE_DIR", "./whisper_cache")
+    video_output_dir: str = os.getenv("VIDEO_OUTPUT_DIR", "/tmp/videos")
+    whisper_model_cache_dir: str = os.getenv("WHISPER_MODEL_CACHE_DIR", "/tmp/whisper_cache")
 
     # Computed properties
     @property
@@ -42,9 +42,12 @@ class Settings(BaseSettings):
         if not self.supabase_key:
             raise ValueError("Database_ANON_KEY environment variable is required")
 
-        # Create directories if they don't exist
-        os.makedirs(self.video_output_dir, exist_ok=True)
-        os.makedirs(self.whisper_model_cache_dir, exist_ok=True)
+        try:
+            os.makedirs(self.video_output_dir, exist_ok=True)
+            os.makedirs(self.whisper_model_cache_dir, exist_ok=True)
+        except Exception as e:
+            import logging
+            logging.warning(f"Could not create directories: {e}")
 
     class Config:
         env_file = ".env"
