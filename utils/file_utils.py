@@ -3,6 +3,7 @@ import httpx
 import logging
 from typing import Optional, Tuple
 from pathlib import Path
+from urllib.parse import urlparse, unquote
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,46 @@ class FileSizeLimitExceeded(Exception):
 class DownloadError(Exception):
     """Raised when file download fails"""
     pass
+
+
+def extract_filename_from_url(url: str, default: str = "video.mp4") -> str:
+    """
+    Safely extract filename from URL, removing query parameters and handling edge cases
+
+    Args:
+        url: URL to extract filename from
+        default: Default filename if extraction fails
+
+    Returns:
+        Clean filename without query parameters
+
+    Example:
+        >>> extract_filename_from_url("https://example.com/video.mp4?token=123")
+        'video.mp4'
+        >>> extract_filename_from_url("https://example.com/path/to/my%20video.mp4")
+        'my video.mp4'
+    """
+    try:
+        parsed_url = urlparse(url)
+        path = unquote(parsed_url.path)
+        filename = os.path.basename(path)
+
+        if not filename or filename == "/":
+            logger.warning(f"Could not extract filename from URL: {url}")
+            return default
+
+        if not any(filename.lower().endswith(ext) for ext in ['.mp4', '.mp3', '.wav', '.mov', '.avi', '.mkv', '.webm']):
+            logger.warning(f"Extracted filename has unexpected extension: {filename}")
+            filename = f"{filename}.mp4"
+
+        invalid_chars = '<>:"|?*'
+        for char in invalid_chars:
+            filename = filename.replace(char, '_')
+
+        return filename
+    except Exception as e:
+        logger.error(f"Failed to extract filename from URL {url}: {e}")
+        return default
 
 
 async def check_file_size(url: str) -> int:
@@ -53,7 +94,16 @@ async def check_file_size(url: str) -> int:
             return file_size
 
     except httpx.HTTPStatusError as e:
-        raise DownloadError(f"HTTP error checking file size: {e.response.status_code}")
+        status_code = e.response.status_code
+        if status_code == 403:
+            raise DownloadError(
+                f"Access denied (403 Forbidden). The URL may have expired or requires authentication. "
+                f"Please ensure the URL is publicly accessible and not expired."
+            )
+        elif status_code == 404:
+            raise DownloadError(f"File not found (404). Please verify the URL is correct.")
+        else:
+            raise DownloadError(f"HTTP error {status_code} while accessing URL")
     except httpx.RequestError as e:
         raise DownloadError(f"Network error checking file size: {str(e)}")
     except ValueError:
@@ -102,7 +152,16 @@ async def download_file(url: str, output_path: str) -> Tuple[str, int]:
         return output_path, actual_size
 
     except httpx.HTTPStatusError as e:
-        raise DownloadError(f"HTTP error during download: {e.response.status_code}")
+        status_code = e.response.status_code
+        if status_code == 403:
+            raise DownloadError(
+                f"Access denied (403 Forbidden). The URL may have expired or requires authentication. "
+                f"Please ensure the URL is publicly accessible and not expired."
+            )
+        elif status_code == 404:
+            raise DownloadError(f"File not found (404). Please verify the URL is correct.")
+        else:
+            raise DownloadError(f"HTTP error {status_code} during download")
     except httpx.RequestError as e:
         raise DownloadError(f"Network error during download: {str(e)}")
     except Exception as e:
