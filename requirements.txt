@@ -1,0 +1,12 @@
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+redis==5.0.1
+supabase==2.3.4
+openai-whisper==20231117
+httpx==0.26.0
+python-dotenv==1.0.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-multipart==0.0.9
+ffmpeg-python==0.2.0
+apscheduler==3.10.4
