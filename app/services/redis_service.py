@@ -65,6 +65,7 @@ class RedisService:
                 "task_type": task_type
             }
 
+            logger.debug(f"Enqueuing task {task_id} to queue {self.queue_key}")
             await self.redis_client.lpush(self.queue_key, json.dumps(task_data))
 
             task_key = f"{self.task_key_prefix}{task_id}"
@@ -74,10 +75,11 @@ class RedisService:
                 json.dumps(task_data)
             )
 
-            logger.info(f"Task {task_id} enqueued with type {task_type}")
+            queue_length = await self.redis_client.llen(self.queue_key)
+            logger.info(f"Task {task_id} enqueued with type {task_type}. Queue length: {queue_length}")
             return True
         except Exception as e:
-            logger.error(f"Failed to enqueue task {task_id}: {e}")
+            logger.error(f"Failed to enqueue task {task_id}: {e}", exc_info=True)
             return False
 
     async def dequeue_task(self, timeout: int = 5) -> Optional[Dict[str, Any]]:
@@ -91,15 +93,17 @@ class RedisService:
             Task data dictionary or None if timeout
         """
         try:
+            logger.debug(f"Waiting for task from queue {self.queue_key} (timeout: {timeout}s)")
             result = await self.redis_client.brpop(self.queue_key, timeout=timeout)
             if result:
                 _, task_json = result
                 task_data = json.loads(task_json)
-                logger.info(f"Dequeued task: {task_data['task_id']}")
+                logger.info(f"Dequeued task: {task_data['task_id']} of type {task_data.get('task_type')}")
                 return task_data
+            logger.debug("No task available in queue")
             return None
         except Exception as e:
-            logger.error(f"Failed to dequeue task: {e}")
+            logger.error(f"Failed to dequeue task: {e}", exc_info=True)
             return None
 
     async def get_queue_length(self) -> int:
