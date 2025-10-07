@@ -23,7 +23,6 @@ class TaskStatus(str, Enum):
 class CaptionTaskRequest(BaseModel):
     """Request model for video captioning task"""
     video_url: HttpUrl = Field(..., description="URL of the video to add captions")
-    model_size: str = Field(default="small", description="Whisper model size: tiny, base, small, medium, large")
 
     class Config:
         json_schema_extra = {
