@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python39", "ffmpeg", "git"]
+nixPkgs = ["python39", "python39Packages.pip", "ffmpeg", "git"]
 
 [phases.install]
 cmds = ["pip3 install -r requirements.txt"]
