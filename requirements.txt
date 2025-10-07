@@ -3,7 +3,7 @@ uvicorn[standard]==0.27.1
 redis==5.0.1
 supabase==2.3.4
 openai-whisper==20231117
-httpx==0.26.0
+httpx==0.25.2
 python-dotenv==1.0.1
 pydantic==2.6.1
 pydantic-settings==2.1.0
