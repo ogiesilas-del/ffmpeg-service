@@ -23,17 +23,17 @@ class TaskStatus(str, Enum):
 class CaptionTaskRequest(BaseModel):
     """Request model for video captioning task"""
     video_url: HttpUrl = Field(..., description="URL of the video to add captions")
-    model_size: str = Field(default="small", description="Whisper model size (tiny, base, small, medium, large)", alias="model_size")
+    model_size: str = Field(default="small", description="Whisper model size (tiny, base, small, medium, large)")
 
-    model_config = {"protected_namespaces": ()}
-
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "protected_namespaces": (),
+        "json_schema_extra": {
             "example": {
                 "video_url": "https://example.com/video.mp4",
                 "model_size": "small"
             }
         }
+    }
 
 
 class MergeTaskRequest(BaseModel):
@@ -45,8 +45,8 @@ class MergeTaskRequest(BaseModel):
     video_volume: float = Field(default=0.2, ge=0.0, le=1.0, description="Volume level for video audio")
     voiceover_volume: float = Field(default=2.0, ge=0.0, le=10.0, description="Volume level for voiceover")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "scene_clip_urls": [
                     "https://example.com/scene1.mp4",
@@ -62,6 +62,7 @@ class MergeTaskRequest(BaseModel):
                 "voiceover_volume": 2.0
             }
         }
+    }
 
 
 class BackgroundMusicTaskRequest(BaseModel):
@@ -71,8 +72,8 @@ class BackgroundMusicTaskRequest(BaseModel):
     music_volume: float = Field(default=0.3, ge=0.0, le=1.0, description="Volume level for background music")
     video_volume: float = Field(default=1.0, ge=0.0, le=1.0, description="Volume level for video audio")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "video_url": "https://example.com/video.mp4",
                 "music_url": "https://example.com/music.mp3",
@@ -80,6 +81,7 @@ class BackgroundMusicTaskRequest(BaseModel):
                 "video_volume": 1.0
             }
         }
+    }
 
 
 class TaskResponse(BaseModel):
@@ -88,14 +90,15 @@ class TaskResponse(BaseModel):
     status: TaskStatus = Field(..., description="Current task status")
     message: str = Field(..., description="Human-readable message")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "task_id": "550e8400-e29b-41d4-a716-446655440000",
                 "status": "queued",
                 "message": "Task queued successfully"
             }
         }
+    }
 
 
 class TaskStatusResponse(BaseModel):
@@ -108,8 +111,8 @@ class TaskStatusResponse(BaseModel):
     updated_at: datetime
     completed_at: Optional[datetime] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "task_id": "550e8400-e29b-41d4-a716-446655440000",
                 "status": "success",
@@ -120,6 +123,7 @@ class TaskStatusResponse(BaseModel):
                 "completed_at": "2025-10-07T12:05:00Z"
             }
         }
+    }
 
 
 class HealthCheckResponse(BaseModel):
@@ -129,8 +133,8 @@ class HealthCheckResponse(BaseModel):
     supabase: str = Field(..., description="Supabase connection status")
     queue_length: int = Field(..., description="Number of tasks in queue")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "status": "healthy",
                 "redis": "connected",
@@ -138,3 +142,4 @@ class HealthCheckResponse(BaseModel):
                 "queue_length": 5
             }
         }
+    }
