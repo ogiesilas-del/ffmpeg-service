@@ -271,13 +271,17 @@ async def get_task_status(task_id: UUID):
     - **error**: Error message (only when status is failed)
     """
     try:
+        logger.info(f"Fetching status for task {task_id}")
         task_data = supabase_service.get_task(task_id)
 
         if not task_data:
+            logger.warning(f"Task {task_id} not found in database")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found"
             )
+
+        logger.info(f"Task {task_id} found with status: {task_data['status']}")
 
         return TaskStatusResponse(
             task_id=UUID(task_data["id"]),
@@ -292,7 +296,7 @@ async def get_task_status(task_id: UUID):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting task status for {task_id}: {e}")
+        logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
