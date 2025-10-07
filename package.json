@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "test": "echo 'Python project - run: python3 -m pytest' && exit 0",
-    "build": "echo 'Python FFmpeg Video Processing API - Build successful' && echo 'Ready for deployment'"
+    "build": "echo 'Python FFmpeg Video Processing API - Build successful' && exit 0"
   },
   "repository": {
     "type": "git",
