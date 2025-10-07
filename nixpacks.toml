@@ -2,10 +2,15 @@
 nixPkgs = ["python311", "python311Packages.pip", "ffmpeg", "git"]
 
 [phases.install]
-cmds = ["pip install --break-system-packages -r requirements.txt"]
+cmds = [
+  "echo '🚀 Installing Python dependencies...'",
+  "pip install --break-system-packages -r requirements.txt"
+]
 
 [phases.build]
-cmds = ["ffmpeg -version"]
+cmds = [
+  "echo '✅ Build phase complete. No extra pip installs.'"
+]
 
 [start]
 cmd = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
