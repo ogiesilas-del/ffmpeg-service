@@ -265,6 +265,36 @@ async def health_check():
     )
 
 
+@app.get("/debug/queue")
+async def debug_queue_status():
+    """
+    Get detailed queue and system status for debugging
+    """
+    try:
+        queue_length = await redis_service.get_queue_length()
+        redis_healthy = await redis_service.is_healthy()
+        supabase_healthy = supabase_service.is_healthy()
+
+        logger.info(f"Debug endpoint called - Redis: {redis_healthy}, Supabase: {supabase_healthy}, Queue: {queue_length}")
+
+        return {
+            "redis": {
+                "connected": redis_healthy,
+                "queue_length": queue_length
+            },
+            "supabase": {
+                "connected": supabase_healthy
+            },
+            "message": "Queue status retrieved"
+        }
+    except Exception as e:
+        logger.error(f"Error getting debug info: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "message": "Failed to retrieve queue status"
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=settings.port)
