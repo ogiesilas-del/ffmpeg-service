@@ -96,7 +96,7 @@ class SupabaseService:
         """
         try:
             logger.debug(f"Querying task {task_id} from Supabase")
-            result = self.client.table("tasks").select("*").eq("id", str(task_id)).maybeSingle().execute()
+            result = self.client.table("tasks").select("*").eq("id", str(task_id)).maybe_single().execute()
 
             logger.debug(f"Query result for task {task_id}: data={result.data}")
 
