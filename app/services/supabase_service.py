@@ -18,6 +18,10 @@ class SupabaseService:
     def connect(self) -> None:
         """Establish connection to Supabase"""
         try:
+            if not settings.supabase_url or not settings.supabase_key:
+                logger.warning("Supabase credentials not configured")
+                return
+
             self.client = create_client(settings.supabase_url, settings.supabase_key)
             logger.info("Supabase connection established")
         except Exception as e:
