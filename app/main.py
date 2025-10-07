@@ -28,13 +28,14 @@ async def lifespan(app: FastAPI):
     try:
         settings.validate_config()
         logger.info("Configuration validated")
-        supabase_connected = True
     except Exception as e:
-        logger.warning(f"Supabase configuration issue: {e}")
+        logger.warning(f"Configuration validation failed: {e}")
 
     try:
         supabase_service.connect()
-        logger.info("Supabase connected successfully")
+        if supabase_service.client:
+            supabase_connected = True
+            logger.info("Supabase connected successfully")
     except Exception as e:
         logger.warning(f"Supabase connection failed: {e}")
         supabase_connected = False
