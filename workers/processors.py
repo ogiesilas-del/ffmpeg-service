@@ -36,7 +36,7 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
         supabase_service.update_task_status(task_id, TaskStatus.RUNNING)
 
         video_url = task_data["video_url"]
-        model_size = task_data.get("model_size", "small")
+        model_size = "small"
 
         video_filename = f"{task_id}_input.mp4"
         video_path = os.path.join(tempfile.gettempdir(), video_filename)
