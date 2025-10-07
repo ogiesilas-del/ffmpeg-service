@@ -1,15 +1,11 @@
+# nixpacks.toml
 [phases.setup]
 nixPkgs = ["python311", "python311Packages.pip", "ffmpeg", "git"]
 
 [phases.install]
 cmds = [
-  "echo '🚀 Installing Python dependencies...'",
+  "echo '🚀 Installing dependencies...'",
   "pip install --break-system-packages -r requirements.txt"
-]
-
-[phases.build]
-cmds = [
-  "echo '✅ Build phase complete. No extra pip installs.'"
 ]
 
 [start]
