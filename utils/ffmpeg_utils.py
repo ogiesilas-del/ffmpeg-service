@@ -98,19 +98,15 @@ def burn_subtitles(video_path: str, srt_text: str, output_path: str, settings: d
     # Default settings
     if settings is None:
         settings = {
-            "shadow-offset": 2,
             "shadow-color": "#000000",
             "max-words-per-line": 3,
-            "font-size": 80,
+            "font-size": 10,
             "outline-color": "#000000",
             "word-color": "#FFFFFF",
-            "outline-width": 3,
-            "x": 540,
-            "y": 1400,
-            "style": "classic",
-            "font-family": "Nunito",
-            "position": "custom",
-            "line-color": "#FFFFFF"
+            "outline-width": 0.5,
+                "y": 50,  # vertical distance from bottom
+            "font-family": "Montserrat-Bold",
+            "bold": True
         }
     
     srt_path = video_path.replace(".mp4", "_temp.srt")
@@ -135,14 +131,15 @@ def burn_subtitles(video_path: str, srt_text: str, output_path: str, settings: d
             f"subtitles={srt_path_escaped}:force_style='"
             f"FontName={settings['font-family']},"
             f"FontSize={settings['font-size']},"
+            f"Bold=1,"
             f"PrimaryColour={primary_color},"
             f"OutlineColour={outline_color},"
             f"BackColour={shadow_color},"
             f"BorderStyle=1,"
             f"Outline={settings['outline-width']},"
             f"Shadow={settings['shadow-offset']},"
-            f"Alignment=2,"
-            f"MarginV={1920 - settings['y']}'"
+            f"Alignment=2,"  # bottom centre
+            f"MarginV={int(settings['y'])}'" 
         )
         
         cmd = [
