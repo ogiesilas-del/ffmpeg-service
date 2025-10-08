@@ -153,8 +153,25 @@ def burn_subtitles(video_path: str, srt_text: str, output_path: str, settings: d
             "-c:a", "copy",
             output_path
         ]
+        logger.info(f"Running FFmpeg subtitle burn command...")
+        logger.info(f"Subtitle filter: {subtitle_filter[:100]}...")
+        logger.info(f"Full command: {' '.join(cmd)}")
+
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+        logger.info(f"FFmpeg completed with return code: {result.returncode}")
         logger.info(f"Subtitles burned successfully: {output_path}")
+
+        if os.path.exists(output_path):
+            output_size = os.path.getsize(output_path) / (1024 * 1024)
+            logger.info(f"Output file size: {output_size:.2f}MB")
+        else:
+            logger.error(f"Output file does not exist: {output_path}")
+
+        if result.stderr:
+            logger.info(f"FFmpeg stderr output: {result.stderr[-1000:]}")
+        if result.stdout:
+            logger.info(f"FFmpeg stdout output: {result.stdout[-500:]}")
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg error: {e.stderr}")
         raise
@@ -285,6 +302,7 @@ def add_background_music(
     try:
         video_duration = get_video_duration(video_path)
         logger.info(f"Adding background music to video (duration: {video_duration}s)")
+        logger.info(f"Settings: music_volume={music_volume}, video_volume={video_volume}")
 
         filter_complex = (
             f"[0:a]volume={video_volume}[va];"
@@ -307,8 +325,25 @@ def add_background_music(
             output_path
         ]
 
+        logger.info(f"Running FFmpeg background music command...")
+        logger.info(f"Command: {' '.join(cmd[:10])}...")
+        logger.info(f"Full command: {' '.join(cmd)}")
+
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+        logger.info(f"FFmpeg completed with return code: {result.returncode}")
         logger.info(f"Background music added: {output_path}")
+
+        if os.path.exists(output_path):
+            output_size = os.path.getsize(output_path) / (1024 * 1024)
+            logger.info(f"Output file size: {output_size:.2f}MB")
+        else:
+            logger.error(f"Output file does not exist: {output_path}")
+
+        if result.stderr:
+            logger.info(f"FFmpeg stderr output: {result.stderr[-1000:]}")
+        if result.stdout:
+            logger.info(f"FFmpeg stdout output: {result.stdout[-500:]}")
 
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg background music error: {e.stderr}")
