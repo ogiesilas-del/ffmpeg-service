@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     max_concurrent_workers: int = int(os.getenv("MAX_CONCURRENT_WORKERS", "10"))
     task_ttl_hours: int = int(os.getenv("TASK_TTL_HOURS", "2"))
     video_output_dir: str = os.getenv("VIDEO_OUTPUT_DIR", "/app/videos")
-    whisper_model_cache_dir: str = os.getenv("WHISPER_MODEL_CACHE_DIR", "/root/.cache/whisper")
+    whisper_model_cache_dir: str = os.getenv("WHISPER_MODEL_CACHE_DIR", "/data/whisper-models")
 
     # Computed properties
     @property
