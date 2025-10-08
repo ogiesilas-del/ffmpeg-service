@@ -4,7 +4,7 @@ import logging
 import whisper
 import asyncio
 from uuid import UUID
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 from app.models.task import TaskStatus
 from app.services.supabase_service import supabase_service
@@ -19,6 +19,24 @@ from utils.ffmpeg_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cache Whisper model globally to avoid reloading on every task
+_whisper_model_cache: Optional[object] = None
+_whisper_model_size: Optional[str] = None
+
+
+def _load_whisper_model(model_size: str = "base"):
+    """Load and cache Whisper model"""
+    global _whisper_model_cache, _whisper_model_size
+
+    if _whisper_model_cache is None or _whisper_model_size != model_size:
+        logger.info(f"Loading Whisper model: {model_size}")
+        os.environ["WHISPER_CACHE_DIR"] = settings.whisper_model_cache_dir
+        _whisper_model_cache = whisper.load_model(model_size)
+        _whisper_model_size = model_size
+        logger.info(f"Whisper model {model_size} loaded and cached")
+
+    return _whisper_model_cache
 
 
 async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None:
@@ -41,7 +59,7 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
         logger.info(f"[{task_id}] Status updated to RUNNING")
 
         video_url = task_data["video_url"]
-        model_size = "small"
+        model_size = "base"
 
         video_filename = f"{task_id}_input.mp4"
         video_path = os.path.join(tempfile.gettempdir(), video_filename)
@@ -57,14 +75,15 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
             raise Exception(f"Video file not found after download: {video_path}")
 
         logger.info(f"[{task_id}] Transcribing audio with Whisper model: {model_size}")
-        os.environ["WHISPER_CACHE_DIR"] = settings.whisper_model_cache_dir
 
         loop = asyncio.get_event_loop()
-        logger.info(f"[{task_id}] Loading Whisper model...")
         with ThreadPoolExecutor() as executor:
-            model = await loop.run_in_executor(executor, whisper.load_model, model_size)
-            logger.info(f"[{task_id}] Model loaded, starting transcription...")
-            result = await loop.run_in_executor(executor, model.transcribe, video_path)
+            model = await loop.run_in_executor(executor, _load_whisper_model, model_size)
+            logger.info(f"[{task_id}] Model ready, starting transcription...")
+            result = await loop.run_in_executor(
+                executor,
+                lambda: model.transcribe(video_path, fp16=False, language="en")
+            )
 
         logger.info(f"[{task_id}] Transcription complete, found {len(result['segments'])} segments")
         subtitles = result["segments"]
