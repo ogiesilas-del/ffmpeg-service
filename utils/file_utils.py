@@ -259,17 +259,22 @@ async def download_file(
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)
 
-            # Configure httpx client similar to requests
+            # Configure httpx client for fast downloads
             client_config = {
                 "timeout": httpx.Timeout(
-                    connect=30.0,
-                    read=300.0,
-                    write=30.0,
-                    pool=30.0
+                    connect=10.0,
+                    read=120.0,
+                    write=10.0,
+                    pool=10.0
                 ),
                 "follow_redirects": True,
                 "max_redirects": 10,
                 "verify": True,
+                "limits": httpx.Limits(
+                    max_keepalive_connections=20,
+                    max_connections=100,
+                    keepalive_expiry=30.0
+                )
             }
 
             async with httpx.AsyncClient(**client_config) as client:
@@ -280,13 +285,13 @@ async def download_file(
                     chunk_count = 0
                     
                     with open(output_path, "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
                             f.write(chunk)
                             downloaded_size += len(chunk)
                             chunk_count += 1
-                            
-                            # Log progress every 1000 chunks (~8MB)
-                            if chunk_count % 1000 == 0:
+
+                            # Log progress every 200 chunks (~13MB)
+                            if chunk_count % 200 == 0:
                                 logger.info(f"Downloaded {downloaded_size / (1024*1024):.2f}MB...")
 
                             # Check size during download
