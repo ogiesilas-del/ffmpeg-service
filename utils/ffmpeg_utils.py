@@ -101,6 +101,7 @@ def burn_subtitles(video_path: str, srt_text: str, output_path: str, settings: d
             "shadow-color": "#000000",
             "max-words-per-line": 3,
             "font-size": 10,
+            "shadow-offset": 0.3,
             "outline-color": "#000000",
             "word-color": "#FFFFFF",
             "outline-width": 0.5,
