@@ -32,9 +32,12 @@ def _load_whisper_model(model_size: str = "base"):
     if _whisper_model_cache is None or _whisper_model_size != model_size:
         logger.info(f"Loading Whisper model: {model_size}")
         os.environ["WHISPER_CACHE_DIR"] = settings.whisper_model_cache_dir
-        _whisper_model_cache = whisper.load_model(model_size)
+        import time
+        start_time = time.time()
+        _whisper_model_cache = whisper.load_model(model_size, download_root=settings.whisper_model_cache_dir)
+        load_time = time.time() - start_time
         _whisper_model_size = model_size
-        logger.info(f"Whisper model {model_size} loaded and cached")
+        logger.info(f"Whisper model {model_size} loaded in {load_time:.2f}s")
 
     return _whisper_model_cache
 
@@ -77,13 +80,24 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
         logger.info(f"[{task_id}] Transcribing audio with Whisper model: {model_size}")
 
         loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             model = await loop.run_in_executor(executor, _load_whisper_model, model_size)
             logger.info(f"[{task_id}] Model ready, starting transcription...")
+            import time
+            transcribe_start = time.time()
             result = await loop.run_in_executor(
                 executor,
-                lambda: model.transcribe(video_path, fp16=False, language="en")
+                lambda: model.transcribe(
+                    video_path,
+                    fp16=False,
+                    language="en",
+                    verbose=False,
+                    beam_size=1,
+                    best_of=1
+                )
             )
+            transcribe_time = time.time() - transcribe_start
+            logger.info(f"[{task_id}] Transcription took {transcribe_time:.2f}s")
 
         logger.info(f"[{task_id}] Transcription complete, found {len(result['segments'])} segments")
         subtitles = result["segments"]
