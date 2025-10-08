@@ -51,6 +51,10 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
 
         logger.info(f"[{task_id}] Downloading video from {video_url}")
         _, file_size = await download_file(video_url, video_path)
+        logger.info(f"[{task_id}] Video downloaded: {file_size/(1024*1024):.2f}MB")
+
+        if not os.path.exists(video_path):
+            raise Exception(f"Video file not found after download: {video_path}")
 
         logger.info(f"[{task_id}] Transcribing audio with Whisper model: {model_size}")
         os.environ["WHISPER_CACHE_DIR"] = settings.whisper_model_cache_dir
@@ -65,17 +69,30 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
         logger.info(f"[{task_id}] Transcription complete, found {len(result['segments'])} segments")
         subtitles = result["segments"]
 
+        if len(subtitles) == 0:
+            logger.warning(f"[{task_id}] No speech detected in video!")
+        else:
+            logger.info(f"[{task_id}] First subtitle: {subtitles[0].get('text', 'N/A')[:100]}...")
+
         logger.info(f"[{task_id}] Generating SRT subtitles")
         srt_text = write_srt(subtitles, max_words_per_line=3)
-        logger.info(f"[{task_id}] SRT generation complete")
+        logger.info(f"[{task_id}] SRT generation complete, length: {len(srt_text)} chars")
+        logger.info(f"[{task_id}] SRT preview: {srt_text[:200]}...")
 
         output_filename = f"{task_id}_captioned.mp4"
         output_path = os.path.join(settings.video_output_dir, output_filename)
 
         logger.info(f"[{task_id}] Burning subtitles into video using FFmpeg")
-        with ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(executor, burn_subtitles, video_path, srt_text, output_path)
+        logger.info(f"[{task_id}] Input: {video_path}, Output: {output_path}")
+        with ThreadPoolExecutor() as burn_executor:
+            await loop.run_in_executor(burn_executor, burn_subtitles, video_path, srt_text, output_path)
         logger.info(f"[{task_id}] Subtitle burning complete")
+
+        if os.path.exists(output_path):
+            output_size = os.path.getsize(output_path) / (1024 * 1024)
+            logger.info(f"[{task_id}] Output video created: {output_size:.2f}MB")
+        else:
+            logger.error(f"[{task_id}] ERROR: Output video file not created!")
 
         result_url = f"{settings.railway_public_url}/video/{output_filename}"
 
