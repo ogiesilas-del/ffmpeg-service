@@ -2,8 +2,10 @@ import os
 import tempfile
 import logging
 import whisper
+import asyncio
 from uuid import UUID
 from typing import Dict, Any
+from concurrent.futures import ThreadPoolExecutor
 from app.models.task import TaskStatus
 from app.services.supabase_service import supabase_service
 from app.config import settings
@@ -52,8 +54,12 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
 
         logger.info(f"[{task_id}] Transcribing audio with Whisper model: {model_size}")
         os.environ["WHISPER_CACHE_DIR"] = settings.whisper_model_cache_dir
-        model = whisper.load_model(model_size)
-        result = model.transcribe(video_path)
+
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            model = await loop.run_in_executor(executor, whisper.load_model, model_size)
+            result = await loop.run_in_executor(executor, model.transcribe, video_path)
+
         subtitles = result["segments"]
 
         logger.info(f"[{task_id}] Generating SRT subtitles")
