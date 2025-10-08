@@ -1,9 +1,11 @@
 import os
 import httpx
+import asyncio
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
+from datetime import datetime
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -78,12 +80,13 @@ def extract_filename_from_url(url: str, default: str = "video.mp4") -> str:
         return default
 
 
-async def check_file_size(url: str) -> int:
+async def check_file_size(url: str, headers: Optional[dict] = None) -> int:
     """
     Check the size of a remote file using HEAD request
 
     Args:
         url: URL of the file to check
+        headers: Optional custom headers for the request
 
     Returns:
         File size in bytes (0 if Content-Length not available)
@@ -95,16 +98,62 @@ async def check_file_size(url: str) -> int:
     try:
         logger.info(f"Checking file size for: {url}")
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.head(url, follow_redirects=True)
-            response.raise_for_status()
+        # Default headers to mimic browser request
+        default_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "identity",  # Don't use gzip for cloud storage
+            "Connection": "keep-alive",
+            "Referer": url.split('?')[0]  # Use base URL as referer
+        }
+        
+        if headers:
+            default_headers.update(headers)
+        
+        # Configure httpx client with more lenient settings for cloud storage
+        client_config = {
+            "timeout": 30.0,
+            "follow_redirects": True,
+            "max_redirects": 10,
+            "verify": True,  # Keep SSL verification
+        }
+        
+        async with httpx.AsyncClient(**client_config) as client:
+            try:
+                response = await client.head(url, headers=default_headers)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 405 or e.response.status_code == 403:
+                    # HEAD not supported or forbidden, try GET with small range
+                    logger.info("HEAD request failed, trying GET with range")
+                    range_headers = default_headers.copy()
+                    range_headers["Range"] = "bytes=0-1"
+                    try:
+                        response = await client.get(url, headers=range_headers)
+                        response.raise_for_status()
+                    except:
+                        # If range request fails, skip size check
+                        logger.warning("Could not check file size, skipping validation")
+                        return 0
+                else:
+                    raise
 
             content_length = response.headers.get("content-length")
             if not content_length:
-                logger.warning(f"Content-Length header not found for {url}, will skip size check")
-                return 0  # Return 0 to skip size validation
-
-            file_size = int(content_length)
+                content_range = response.headers.get("content-range")
+                if content_range:
+                    # Extract size from Content-Range: bytes 0-1/12345
+                    try:
+                        file_size = int(content_range.split('/')[-1])
+                    except:
+                        logger.warning(f"Could not parse Content-Range: {content_range}")
+                        return 0
+                else:
+                    logger.warning(f"Content-Length header not found for {url}, will skip size check")
+                    return 0
+            else:
+                file_size = int(content_length)
 
             # Check against configured max size
             if file_size > settings.max_file_size_bytes:
@@ -118,102 +167,213 @@ async def check_file_size(url: str) -> int:
     except httpx.HTTPStatusError as e:
         status_code = e.response.status_code
         if status_code == 403:
-            raise DownloadError(
-                f"Access denied (403 Forbidden). The URL may have expired or requires authentication. "
-                f"Please ensure the URL is publicly accessible and not expired."
+            # Check if URL has expired
+            is_expired, expiry_info = check_url_expiration(url)
+            
+            error_msg = (
+                f"Access denied (403 Forbidden). "
             )
+            
+            if is_expired:
+                error_msg += f"The URL has expired. {expiry_info}. Please generate a new pre-signed URL."
+            else:
+                # Don't fail on 403 during size check for cloud storage URLs
+                logger.warning(f"403 on HEAD request, will attempt download anyway: {url}")
+                return 0  # Skip size validation but allow download attempt
+            
+            # Only raise if definitely expired
+            if is_expired:
+                raise DownloadError(error_msg)
+            return 0
+            
         elif status_code == 404:
             raise DownloadError(f"File not found (404). Please verify the URL is correct.")
-        elif status_code == 405:
-            # Some servers don't support HEAD requests, return 0 to skip size check
-            logger.warning(f"HEAD request not supported for {url}, will skip size check")
-            return 0
         else:
-            raise DownloadError(f"HTTP error {status_code} while accessing URL")
+            # Don't fail on other errors during size check
+            logger.warning(f"HTTP {status_code} during size check, will skip validation")
+            return 0
+            
     except httpx.RequestError as e:
-        raise DownloadError(f"Network error checking file size: {str(e)}")
+        logger.warning(f"Network error during size check (will skip): {str(e)}")
+        return 0
     except ValueError:
         logger.warning("Invalid Content-Length header, will skip size check")
         return 0
 
 
-async def download_file(url: str, output_path: str, skip_size_check: bool = False) -> Tuple[str, int]:
+async def download_file(
+    url: str, 
+    output_path: str, 
+    skip_size_check: bool = False,
+    headers: Optional[dict] = None,
+    max_retries: int = 3
+) -> Tuple[str, int]:
     """
-    Download a file from URL to local path with progress tracking
+    Download a file from URL to local path with progress tracking and retry logic
 
     Args:
         url: URL of the file to download
         output_path: Local path to save the file
         skip_size_check: Skip initial file size check (useful for servers that don't support HEAD)
+        headers: Optional custom headers for the request
+        max_retries: Maximum number of retry attempts on failure
 
     Returns:
         Tuple of (output_path, file_size)
 
     Raises:
         FileSizeLimitExceeded: If file exceeds max size
-        DownloadError: If download fails
+        DownloadError: If download fails after all retries
     """
-    try:
-        # Check file size first (unless skipped)
-        if not skip_size_check:
-            file_size = await check_file_size(url)
-        else:
-            file_size = 0
+    # Default headers optimized for cloud storage (similar to requests library)
+    default_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",  # Don't compress for cloud storage
+        "Connection": "keep-alive",
+    }
+    
+    if headers:
+        default_headers.update(headers)
+    
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            # Check file size first (unless skipped)
+            if not skip_size_check and attempt == 0:
+                try:
+                    file_size = await check_file_size(url, headers=default_headers)
+                except DownloadError:
+                    # If size check fails, log but continue with download
+                    logger.warning("Size check failed, proceeding with download anyway")
+                    file_size = 0
+            else:
+                file_size = 0
 
-        logger.info(f"Downloading {url} to {output_path}")
+            logger.info(f"Downloading {url} to {output_path} (attempt {attempt + 1}/{max_retries})")
 
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            # Ensure output directory exists
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream("GET", url, follow_redirects=True) as response:
-                response.raise_for_status()
+            # Configure httpx client similar to requests
+            client_config = {
+                "timeout": httpx.Timeout(
+                    connect=30.0,
+                    read=300.0,
+                    write=30.0,
+                    pool=30.0
+                ),
+                "follow_redirects": True,
+                "max_redirects": 10,
+                "verify": True,
+            }
 
-                downloaded_size = 0
-                with open(output_path, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=8192):
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
+            async with httpx.AsyncClient(**client_config) as client:
+                async with client.stream("GET", url, headers=default_headers) as response:
+                    response.raise_for_status()
 
-                        # Check size during download
-                        if downloaded_size > settings.max_file_size_bytes:
-                            # Clean up partial file
-                            try:
-                                os.remove(output_path)
-                            except:
-                                pass
-                            raise FileSizeLimitExceeded(
-                                f"Download exceeded size limit of {settings.max_file_size_mb}MB"
-                            )
+                    downloaded_size = 0
+                    chunk_count = 0
+                    
+                    with open(output_path, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=8192):
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            chunk_count += 1
+                            
+                            # Log progress every 1000 chunks (~8MB)
+                            if chunk_count % 1000 == 0:
+                                logger.info(f"Downloaded {downloaded_size / (1024*1024):.2f}MB...")
 
-        actual_size = os.path.getsize(output_path)
-        logger.info(f"Download complete: {output_path} ({actual_size / (1024*1024):.2f}MB)")
+                            # Check size during download
+                            if downloaded_size > settings.max_file_size_bytes:
+                                # Clean up partial file
+                                try:
+                                    os.remove(output_path)
+                                except:
+                                    pass
+                                raise FileSizeLimitExceeded(
+                                    f"Download exceeded size limit of {settings.max_file_size_mb}MB"
+                                )
 
-        return output_path, actual_size
+            actual_size = os.path.getsize(output_path)
+            logger.info(f"Download complete: {output_path} ({actual_size / (1024*1024):.2f}MB)")
 
-    except httpx.HTTPStatusError as e:
-        status_code = e.response.status_code
-        if status_code == 403:
-            raise DownloadError(
-                f"Access denied (403 Forbidden). The URL may have expired or requires authentication. "
-                f"Please ensure the URL is publicly accessible and not expired."
-            )
-        elif status_code == 404:
-            raise DownloadError(f"File not found (404). Please verify the URL is correct.")
-        else:
-            raise DownloadError(f"HTTP error {status_code} during download")
-    except httpx.RequestError as e:
-        raise DownloadError(f"Network error during download: {str(e)}")
-    except FileSizeLimitExceeded:
-        raise  # Re-raise size limit errors
-    except Exception as e:
-        # Clean up partial download
-        if os.path.exists(output_path):
-            try:
-                os.remove(output_path)
-            except:
-                pass
-        raise DownloadError(f"Download failed: {str(e)}")
+            return output_path, actual_size
+
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            if status_code == 403:
+                # Check if URL has expired
+                is_expired, expiry_info = check_url_expiration(url)
+                
+                if is_expired:
+                    error_msg = (
+                        f"Access denied (403 Forbidden). "
+                        f"The URL has expired. {expiry_info}. "
+                        f"Please generate a new pre-signed URL."
+                    )
+                    raise DownloadError(error_msg)
+                else:
+                    # 403 but not expired - might be temporary, retry
+                    last_error = DownloadError(f"Access denied (403), retrying...")
+                    if attempt < max_retries - 1:
+                        logger.warning(f"403 error, attempt {attempt + 1}/{max_retries}, retrying...")
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    else:
+                        error_msg = (
+                            f"Access denied (403 Forbidden). "
+                            f"The URL may require special authentication or may be region-restricted. "
+                            f"Please verify the URL is publicly accessible."
+                        )
+                        raise DownloadError(error_msg)
+                        
+            elif status_code == 404:
+                raise DownloadError(f"File not found (404). Please verify the URL is correct.")
+            elif status_code >= 500:
+                # Server errors might be temporary, retry
+                last_error = DownloadError(f"Server error {status_code}, retrying...")
+                logger.warning(f"Server error {status_code}, attempt {attempt + 1}/{max_retries}")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            else:
+                raise DownloadError(f"HTTP error {status_code} during download")
+                
+        except httpx.RequestError as e:
+            last_error = DownloadError(f"Network error: {str(e)}")
+            if attempt < max_retries - 1:
+                logger.warning(f"Network error, retrying in {2 ** attempt} seconds...")
+                await asyncio.sleep(2 ** attempt)
+                continue
+            else:
+                raise last_error
+                
+        except FileSizeLimitExceeded:
+            raise  # Don't retry size limit errors
+            
+        except Exception as e:
+            # Clean up partial download
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except:
+                    pass
+            
+            last_error = DownloadError(f"Download failed: {str(e)}")
+            if attempt < max_retries - 1:
+                logger.warning(f"Download failed, retrying in {2 ** attempt} seconds...")
+                await asyncio.sleep(2 ** attempt)
+                continue
+            else:
+                raise last_error
+    
+    # If we get here, all retries failed
+    raise last_error or DownloadError("Download failed after all retries")
 
 
 def validate_filename(filename: str) -> bool:
@@ -340,7 +500,84 @@ def check_disk_space(required_bytes: int) -> bool:
     return True
 
 
-def sanitize_path(path: str) -> str:
+def check_url_expiration(url: str) -> Tuple[bool, Optional[str]]:
+    """
+    Check if a pre-signed URL has expired based on the Expires parameter
+    
+    Args:
+        url: URL to check (should contain Expires query parameter)
+        
+    Returns:
+        Tuple of (is_expired, expiration_info)
+        
+    Example:
+        >>> check_url_expiration("https://example.com/file.mp4?Expires=1234567890")
+        (True, "URL expired on 2009-02-13 23:31:30 UTC")
+    """
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        
+        # Check for Expires parameter (Unix timestamp)
+        if 'Expires' in params:
+            expires_timestamp = int(params['Expires'][0])
+            expires_datetime = datetime.fromtimestamp(expires_timestamp)
+            current_timestamp = datetime.now().timestamp()
+            
+            is_expired = current_timestamp > expires_timestamp
+            
+            if is_expired:
+                return True, f"URL expired on {expires_datetime.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            else:
+                time_left = expires_timestamp - current_timestamp
+                hours_left = int(time_left / 3600)
+                return False, f"URL valid for {hours_left} more hours"
+        
+        return False, "No expiration detected"
+        
+    except Exception as e:
+        logger.warning(f"Could not check URL expiration: {e}")
+        return False, None
+
+
+def check_url_expiration(url: str) -> Tuple[bool, Optional[str]]:
+    """
+    Check if a pre-signed URL has expired based on the Expires parameter
+    
+    Args:
+        url: URL to check (should contain Expires query parameter)
+        
+    Returns:
+        Tuple of (is_expired, expiration_info)
+        
+    Example:
+        >>> check_url_expiration("https://example.com/file.mp4?Expires=1234567890")
+        (True, "URL expired on 2009-02-13 23:31:30 UTC")
+    """
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        
+        # Check for Expires parameter (Unix timestamp)
+        if 'Expires' in params:
+            expires_timestamp = int(params['Expires'][0])
+            expires_datetime = datetime.fromtimestamp(expires_timestamp)
+            current_timestamp = datetime.now().timestamp()
+            
+            is_expired = current_timestamp > expires_timestamp
+            
+            if is_expired:
+                return True, f"URL expired on {expires_datetime.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            else:
+                time_left = expires_timestamp - current_timestamp
+                hours_left = int(time_left / 3600)
+                return False, f"URL valid for {hours_left} more hours"
+        
+        return False, "No expiration detected"
+        
+    except Exception as e:
+        logger.warning(f"Could not check URL expiration: {e}")
+        return False, None
     """
     Sanitize a file path to prevent security issues
     
