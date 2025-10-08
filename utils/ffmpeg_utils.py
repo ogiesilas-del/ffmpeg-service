@@ -52,25 +52,20 @@ def format_time(seconds: float) -> str:
 def write_srt(subtitles, max_words_per_line: int = 3) -> str:
     """
     Convert Whisper segments to SRT format with word limiting
-
     Args:
         subtitles: List of subtitle segments from Whisper
         max_words_per_line: Maximum words per subtitle line
-
     Returns:
         SRT formatted string
     """
     srt_output = []
     counter = 1
-
     for seg in subtitles:
         start = seg["start"]
         end = seg["end"]
         text = seg["text"].strip()
-
         words = text.split()
         duration = end - start
-
         if len(words) <= max_words_per_line:
             chunks = [text]
         else:
@@ -78,61 +73,94 @@ def write_srt(subtitles, max_words_per_line: int = 3) -> str:
             for i in range(0, len(words), max_words_per_line):
                 chunk = " ".join(words[i:i + max_words_per_line])
                 chunks.append(chunk)
-
         chunk_duration = duration / len(chunks)
         for idx, chunk in enumerate(chunks):
             chunk_start = start + (idx * chunk_duration)
             chunk_end = start + ((idx + 1) * chunk_duration)
-
             srt_output.append(
                 f"{counter}\n{format_time(chunk_start)} --> {format_time(chunk_end)}\n{chunk}\n"
             )
             counter += 1
-
     return "\n".join(srt_output)
 
 
-def burn_subtitles(video_path: str, srt_text: str, output_path: str) -> None:
+def burn_subtitles(video_path: str, srt_text: str, output_path: str, settings: dict = None) -> None:
     """
-    Burn subtitles into video using FFmpeg
-
+    Burn subtitles into video using FFmpeg with custom styling
     Args:
         video_path: Path to input video
         srt_text: SRT formatted subtitles
         output_path: Path for output video
-
+        settings: Caption styling settings
     Raises:
         subprocess.CalledProcessError: If FFmpeg fails
     """
+    # Default settings
+    if settings is None:
+        settings = {
+            "shadow-offset": 2,
+            "shadow-color": "#000000",
+            "max-words-per-line": 3,
+            "font-size": 80,
+            "outline-color": "#000000",
+            "word-color": "#FFFFFF",
+            "outline-width": 3,
+            "x": 540,
+            "y": 1400,
+            "style": "classic",
+            "font-family": "Nunito",
+            "position": "custom",
+            "line-color": "#FFFFFF"
+        }
+    
     srt_path = video_path.replace(".mp4", "_temp.srt")
-
     try:
         with open(srt_path, "w", encoding="utf-8") as srt_file:
             srt_file.write(srt_text)
-
         logger.info(f"Burning subtitles into video: {video_path}")
-
         srt_path_escaped = srt_path.replace("\\", "/").replace(":", "\\:")
-
+        
+        # Convert hex colors to ASS format (&H00BBGGRR)
+        def hex_to_ass_color(hex_color):
+            hex_color = hex_color.lstrip('#')
+            r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
+            return f"&H00{b}{g}{r}"
+        
+        primary_color = hex_to_ass_color(settings["word-color"])
+        outline_color = hex_to_ass_color(settings["outline-color"])
+        shadow_color = hex_to_ass_color(settings["shadow-color"])
+        
+        # Build subtitle filter with custom styling
+        subtitle_filter = (
+            f"subtitles={srt_path_escaped}:force_style='"
+            f"FontName={settings['font-family']},"
+            f"FontSize={settings['font-size']},"
+            f"PrimaryColour={primary_color},"
+            f"OutlineColour={outline_color},"
+            f"BackColour={shadow_color},"
+            f"BorderStyle=1,"
+            f"Outline={settings['outline-width']},"
+            f"Shadow={settings['shadow-offset']},"
+            f"Alignment=2,"
+            f"MarginV={1920 - settings['y']}'"
+        )
+        
         cmd = [
             "ffmpeg",
             "-y",
             "-i", video_path,
-            "-vf", f"subtitles={srt_path_escaped}",
+            "-vf", subtitle_filter,
             "-c:a", "copy",
             output_path
         ]
-
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         logger.info(f"Subtitles burned successfully: {output_path}")
-
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg error: {e.stderr}")
         raise
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
-
 
 def merge_video_audio(
     video_path: str,
