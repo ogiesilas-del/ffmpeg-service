@@ -146,8 +146,12 @@ def burn_subtitles(video_path: str, srt_text: str, output_path: str, settings: d
         cmd = [
             "ffmpeg",
             "-y",
+            "-threads", "0",
             "-i", video_path,
             "-vf", subtitle_filter,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "23",
             "-c:a", "copy",
             output_path
         ]
@@ -222,6 +226,7 @@ def merge_video_audio(
 
         cmd = [
             "ffmpeg", "-y",
+            "-threads", "0",
             "-i", video_path,
             "-i", audio_path,
             "-t", str(duration),
@@ -229,7 +234,7 @@ def merge_video_audio(
             "-map", "[v]",
             "-map", "[a]",
             "-c:v", "libx264",
-            "-preset", "medium",
+            "-preset", "ultrafast",
             "-crf", "23",
             "-c:a", "aac",
             "-b:a", "128k",
