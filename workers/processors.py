@@ -56,20 +56,26 @@ async def process_caption_task(task_id: UUID, task_data: Dict[str, Any]) -> None
         os.environ["WHISPER_CACHE_DIR"] = settings.whisper_model_cache_dir
 
         loop = asyncio.get_event_loop()
+        logger.info(f"[{task_id}] Loading Whisper model...")
         with ThreadPoolExecutor() as executor:
             model = await loop.run_in_executor(executor, whisper.load_model, model_size)
+            logger.info(f"[{task_id}] Model loaded, starting transcription...")
             result = await loop.run_in_executor(executor, model.transcribe, video_path)
 
+        logger.info(f"[{task_id}] Transcription complete, found {len(result['segments'])} segments")
         subtitles = result["segments"]
 
         logger.info(f"[{task_id}] Generating SRT subtitles")
         srt_text = write_srt(subtitles, max_words_per_line=3)
+        logger.info(f"[{task_id}] SRT generation complete")
 
         output_filename = f"{task_id}_captioned.mp4"
         output_path = os.path.join(settings.video_output_dir, output_filename)
 
-        logger.info(f"[{task_id}] Burning subtitles into video")
-        burn_subtitles(video_path, srt_text, output_path)
+        logger.info(f"[{task_id}] Burning subtitles into video using FFmpeg")
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(executor, burn_subtitles, video_path, srt_text, output_path)
+        logger.info(f"[{task_id}] Subtitle burning complete")
 
         result_url = f"{settings.railway_public_url}/video/{output_filename}"
 
@@ -146,17 +152,23 @@ async def process_merge_task(task_id: UUID, task_data: Dict[str, Any]) -> None:
 
             scene_output = os.path.join(temp_dir, f"scene_{i}_final.mp4")
 
-            merge_video_audio(
-                video_path=scene_path,
-                audio_path=voice_path,
-                output_path=scene_output,
-                video_volume=video_volume,
-                audio_volume=voiceover_volume,
-                duration=5.0,
-                width=width,
-                height=height,
-                resize_mode="cover"
-            )
+            logger.info(f"[{task_id}] Merging scene {i+1} video and audio with FFmpeg")
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                await loop.run_in_executor(
+                    executor,
+                    merge_video_audio,
+                    scene_path,
+                    voice_path,
+                    scene_output,
+                    video_volume,
+                    voiceover_volume,
+                    5.0,
+                    width,
+                    height,
+                    "cover"
+                )
+            logger.info(f"[{task_id}] Scene {i+1} merge complete")
 
             scene_files.append(scene_output)
 
@@ -170,7 +182,11 @@ async def process_merge_task(task_id: UUID, task_data: Dict[str, Any]) -> None:
         output_filename = f"{task_id}_merged.mp4"
         output_path = os.path.join(settings.video_output_dir, output_filename)
 
-        concat_videos(concat_list_path, output_path)
+        logger.info(f"[{task_id}] Concatenating all scenes with FFmpeg")
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(executor, concat_videos, concat_list_path, output_path)
+        logger.info(f"[{task_id}] Concatenation complete")
 
         result_url = f"{settings.railway_public_url}/video/{output_filename}"
 
@@ -243,14 +259,19 @@ async def process_background_music_task(task_id: UUID, task_data: Dict[str, Any]
         output_filename = f"{task_id}_with_music.mp4"
         output_path = os.path.join(settings.video_output_dir, output_filename)
 
-        logger.info(f"[{task_id}] Adding background music to video")
-        add_background_music(
-            video_path=video_path,
-            music_path=music_path,
-            output_path=output_path,
-            music_volume=music_volume,
-            video_volume=video_volume
-        )
+        logger.info(f"[{task_id}] Adding background music to video with FFmpeg")
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(
+                executor,
+                add_background_music,
+                video_path,
+                music_path,
+                output_path,
+                music_volume,
+                video_volume
+            )
+        logger.info(f"[{task_id}] Background music addition complete")
 
         result_url = f"{settings.railway_public_url}/video/{output_filename}"
 
